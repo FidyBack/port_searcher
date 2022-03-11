@@ -1,75 +1,80 @@
-import socket, sys
+import socket, sys, os
+import threading
+from queue import Queue
+from time import time
 
-class Scanner:
-	def full_scanner(host, inter=None):
-		if inter == None:
-			for port in range(1, 65535):
-				s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-				conn = s.connect_ex((host, port))
-				if conn == 0:
-					try:
-						print(f"Porta {port} Aberta, Serviço: {socket.getservbyport(port)}")
-						s.close()
-					except OSError:
-						print(f"Porta {port} Aberta, Serviço: desconhecido")
-
-		else:
-			for port in range(inter[0], inter[1]):
-				s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-				conn = s.connect_ex((host, port))
-				if conn == 0:
-					try:
-						print(f"Porta {port} Aberta, Serviço: {socket.getservbyport(port)}")
-						s.close()
-					except OSError:
-						print(f"Porta {port} Aberta, Serviço: desconhecido")
-		
-		print("Fim do escaneamento")
+print_lock = threading.Lock()
+q = Queue()
+ports = {}
 
 
-	def port_scanner(host, port):
-		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+def start(host):
+	os.system('clear') if os.name == 'posix' else os.system('cls')
+	hostIp = socket.gethostbyname(host)
+	ports['PORTA'] = ('ESTADO', 'SERVIÇO')
 
-		try:
-			port = int(port)
-			conn = s.connect_ex((host, port))
-			if conn == 0:
-				try:
-					print(f"Porta {port} Aberta, Serviço: {socket.getservbyport(port)}")
-					s.close()
-				except OSError:
-					print(f"Porta {port} Aberta, Serviço: desconhecido")
-			else:
-				print("Porta Fechada")
-			print("Fim do escaneamento")
+	print("-" * 60)
+	print(f"Procurando por portas abertas\nHost: {host}\nIp: {hostIp}")
+	print("-" * 60)
 
-		except ValueError:
-			if '-' in port:
-				ports = port.split("-")
-				try:
-					i1 = int(ports[0])
-					i2 = int(ports[1])
-					Scanner.full_scanner(host, (i1, i2))
 
-				except ValueError as e:
-					raise Exception(e)
-			else:
-				raise Exception ("Formatação inconsistente")
+def align(portList):
+	alignPort = len(max(portList.keys(), key=len))+1
+	alignState = len(max([i[0] for i in portList.values()], key=len))+1
 
-			
+	for i in portList:
+		print(f"{i.ljust(alignPort, ' ')} {portList[i][0].ljust(alignState, ' ')} {portList[i][1]}")
+
+
+def threader(host):
+	while True:
+		port = q.get()
+		range_scan(port, host)
+		q.task_done()
+
+
+def range_scan(port, host):
+	socket.setdefaulttimeout(2)
+	sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	
+	try:
+		result = sock.connect_ex((host, port))
+		if result == 0:
+			try:
+				ports[str(port)] = ('open', socket.getservbyport(port))
+			except OSError:
+				ports[str(port)] = ('open', 'desconhecido')
+		sock.close()
+	
+	except Exception as e:
+		print(e)
+	
+
 
 def main():
-	if len(sys.argv) <= 1:
-		raise Exception("Argumentos Insuficientes")
+	t1 = time()
 
-	elif len(sys.argv) == 2:
-		ipAddress = sys.argv[1]
-		Scanner.full_scanner(ipAddress)
+	try:
+		host = sys.argv[1]
+		start(host)
 
-	elif len(sys.argv) == 3:
-		ipAddress = sys.argv[1]
-		port = sys.argv[2]
-		Scanner.port_scanner(ipAddress, port)
+	except IndexError:
+		print (f"Erro: Argumentos Insuficienes")
+
+	if len(sys.argv) == 2:
+		for _ in range(700):
+			thread = threading.Thread(target=threader, args=[host], daemon = True)
+			thread.start()
+
+	for port in range(65535):
+		q.put(port)
+
+	q.join()
+
+	align(ports)
+	t2 = time()
+	print("-" * 60)
+	print(f'Completo em {round(t2-t1, 2)} segundos')
 
 
 if __name__ == '__main__':
